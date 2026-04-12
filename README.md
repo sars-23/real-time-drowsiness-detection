@@ -70,12 +70,3 @@ The system monitors the Mouth Aspect Ratio to detect yawning, which is another i
 
 ### Alert System
 When drowsiness is detected (either through extended eye closure or yawning), the system displays a visual alert on the video feed.
-
-## Contributing
-Contributions are welcome! Please open an issue or submit a pull request for any features, bug fixes, or improvements.
-
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Disclaimer
-This system is designed as an assistive tool and should not be relied upon as the sole method for preventing drowsy driving. Always prioritize road safety and take appropriate breaks during long drives.
