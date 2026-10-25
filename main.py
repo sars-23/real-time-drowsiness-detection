@@ -1,68 +1,63 @@
-import cv2
-import mediapipe as mp
-import numpy as np
+"""Experimental webcam prototype using MediaPipe face landmarks."""
+import argparse
 
-# Initialize MediaPipe components
-mp_face_mesh = mp.solutions.face_mesh
-mp_drawing = mp.solutions.drawing_utils
+from geometry import calculate_ear, calculate_mar
 
-# Function to compute Eye Aspect Ratio (EAR)
-def calculate_ear(eye):
-    A = np.linalg.norm(eye[1] - eye[5])  # distance between vertical eye landmarks
-    B = np.linalg.norm(eye[2] - eye[4])  # distance between horizontal eye landmarks
-    ear = A / B
-    return ear
+LEFT_EYE = (33, 160, 158, 133, 153, 144)
+RIGHT_EYE = (362, 385, 387, 263, 373, 380)
+MOUTH = (13, 14, 82, 87, 78, 308)
 
-# Function to compute Mouth Aspect Ratio (MAR)
-def calculate_mar(mouth):
-    A = np.linalg.norm(mouth[2] - mouth[10])  # distance between top and bottom lip
-    B = np.linalg.norm(mouth[3] - mouth[9])  # distance between left and right lip
-    mar = A / B
-    return mar
 
-# Start capturing video
-cap = cv2.VideoCapture(0)
+def landmarks_at(face_landmarks, indices):
+    return [(face_landmarks.landmark[index].x, face_landmarks.landmark[index].y) for index in indices]
 
-# Set thresholds
-EAR_THRESHOLD = 0.25
-MAR_THRESHOLD = 0.5
 
-with mp_face_mesh.FaceMesh(static_image_mode=False,
-                            max_num_faces=1,
-                            min_detection_confidence=0.5,
-                            min_tracking_confidence=0.5) as face_mesh:
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+def run(camera_index, ear_threshold, mar_threshold):
+    import cv2
+    import mediapipe as mp
 
-        # Convert the BGR image to RGB
-        img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = face_mesh.process(img_rgb)
+    capture = cv2.VideoCapture(camera_index)
+    if not capture.isOpened():
+        capture.release()
+        raise RuntimeError(f"Could not open camera {camera_index}.")
 
-        if results.multi_face_landmarks:
-            for face_landmarks in results.multi_face_landmarks:
-                mp_drawing.draw_landmarks(frame, face_landmarks, mp_face_mesh.FACE_CONNECTIONS)
-                # Get landmarks for eyes and mouth
-                left_eye = np.array([face_landmarks.landmark[33].x, face_landmarks.landmark[33].y], dtype='float32')
-                right_eye = np.array([face_landmarks.landmark[159].x, face_landmarks.landmark[159].y], dtype='float32')
-                mouth = np.array([[face_landmarks.landmark[i].x, face_landmarks.landmark[i].y] for i in [61, 291, 146, 84, 62, 291, 429, 62, 84, 146, 310]], dtype='float32')
-                ear = calculate_ear([left_eye, right_eye])
-                mar = calculate_mar(mouth)
-                
-                # Check for drowsiness
-                if ear < EAR_THRESHOLD:
-                    cv2.putText(frame, 'DROWSY!', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                
-                # Check for yawning
-                if mar > MAR_THRESHOLD:
-                    cv2.putText(frame, 'YAWNING!', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    face_mesh_module = mp.solutions.face_mesh
+    drawing = mp.solutions.drawing_utils
+    try:
+        with face_mesh_module.FaceMesh(
+            static_image_mode=False, max_num_faces=1,
+            min_detection_confidence=0.5, min_tracking_confidence=0.5,
+        ) as face_mesh:
+            while True:
+                ok, frame = capture.read()
+                if not ok:
+                    break
+                results = face_mesh.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                if results.multi_face_landmarks:
+                    face = results.multi_face_landmarks[0]
+                    drawing.draw_landmarks(frame, face, face_mesh_module.FACEMESH_TESSELATION)
+                    ear = (calculate_ear(landmarks_at(face, LEFT_EYE)) + calculate_ear(landmarks_at(face, RIGHT_EYE))) / 2
+                    mar = calculate_mar(landmarks_at(face, MOUTH))
+                    if ear < ear_threshold:
+                        cv2.putText(frame, "DROWSY!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    if mar > mar_threshold:
+                        cv2.putText(frame, "YAWNING!", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                cv2.imshow("Drowsiness Detection", frame)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+    finally:
+        capture.release()
+        cv2.destroyAllWindows()
 
-        # Show the frame
-        cv2.imshow('Drowsiness Detection', frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
 
-# Release video capture
-cap.release()
-cv2.destroyAllWindows()
+def main():
+    parser = argparse.ArgumentParser(description="Experimental MediaPipe drowsiness prototype")
+    parser.add_argument("--camera", type=int, default=0, help="webcam index (default: 0)")
+    parser.add_argument("--ear-threshold", type=float, default=0.25)
+    parser.add_argument("--mar-threshold", type=float, default=0.5)
+    args = parser.parse_args()
+    run(args.camera, args.ear_threshold, args.mar_threshold)
+
+
+if __name__ == "__main__":
+    main()
